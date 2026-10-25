@@ -12,19 +12,43 @@ const pageNames = {
 }
 
 export default function Navbar({ onMenu }) {
-  const { role } = useApp()
+  const { role, user } = useApp()
   const location = useLocation()
   const navigate = useNavigate()
   const current = location.pathname.split('/')[1]
+
+  const userInitial = (user?.email?.[0] || role?.[0] || 'U').toUpperCase()
+  const userTitle = user?.email || `${role || 'User'}`
+
   return (
     <header className="topbar">
-      <button className="icon-button menu-toggle" aria-label="Open navigation" onClick={onMenu}><Menu size={20} /></button>
-      <div className="breadcrumbs"><span>Workspace</span><span className="crumb-divider">/</span><strong>{pageNames[current] || 'Workspace'}</strong></div>
+      <button className="icon-button menu-toggle" aria-label="Open navigation" onClick={onMenu}>
+        <Menu size={20} />
+      </button>
+      <div className="breadcrumbs">
+        <span>Workspace</span>
+        <span className="crumb-divider">/</span>
+        <strong>{pageNames[current] || 'Workspace'}</strong>
+      </div>
       <div className="topbar-actions">
-        <label className="global-search"><Search size={16} /><input placeholder="Search anything..." aria-label="Search" /><kbd>⌘ K</kbd></label>
-        <button className="icon-button notification-button" aria-label="Notifications" onClick={() => navigate('/notifications')}><Bell size={18} /><i /></button>
+        <label className="global-search">
+          <Search size={16} />
+          <input placeholder="Search workspace..." aria-label="Search" />
+          <kbd>⌘ K</kbd>
+        </label>
+        <button className="icon-button notification-button" aria-label="Notifications" onClick={() => navigate('/notifications')}>
+          <Bell size={18} />
+          <i />
+        </button>
         <div className="topbar-divider" />
-        <button className="topbar-profile" onClick={() => navigate('/settings')}><span className="avatar avatar-indigo">{role?.[0]}</span><span className="profile-label"><strong>{role} preview</strong><small>{role} workspace</small></span><ChevronDown size={15} /></button>
+        <button className="topbar-profile" onClick={() => navigate('/settings')}>
+          <span className="avatar avatar-indigo">{userInitial}</span>
+          <span className="profile-label">
+            <strong>{userTitle}</strong>
+            <small>{role} account</small>
+          </span>
+          <ChevronDown size={15} />
+        </button>
       </div>
     </header>
   )

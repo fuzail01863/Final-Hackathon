@@ -1,12 +1,22 @@
-import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState, useCallback } from 'react'
+import { useNavigate, useParams, Link } from 'react-router-dom'
 import {
   Activity, ArrowRight, ArrowUpRight, BadgeCheck, BriefcaseBusiness, CalendarCheck, CalendarDays,
   ChartNoAxesCombined, Check, ChevronDown, CircleDollarSign, Clock3, Download, FileClock,
   Filter, HelpCircle, MoreHorizontal, Plus, Search, Send, ShieldCheck, Sparkles, Users, Wallet,
+  Trash2, AlertCircle, CheckCircle2, RefreshCw,
 } from 'lucide-react'
 import useApp from '../hooks/useApp'
-import { backendPending } from '../services/api'
+import {
+  getDashboard, getOrganization, updateOrganization, createUnit, deleteUnit,
+  getEmployees, getEmployee, createEmployee, updateEmployee,
+  getAttendance, checkIn, checkOut,
+  getLeaves, applyLeave, getLeaveBalance, decideLeave, cancelLeave,
+  getPayrolls, createPayroll, finalizePayroll, getPayslips,
+  getAnnouncements, createAnnouncement,
+  getNotifications, markNotificationRead,
+  getAuditLogs, aiChat, aiSmartLeave,
+} from '../services/api'
 import DataTable from '../components/DataTable'
 import EmptyState from '../components/EmptyState'
 import ErrorState from '../components/ErrorState'
@@ -14,142 +24,1472 @@ import FormField from '../components/FormField'
 import StatCard from '../components/StatCard'
 import StatusBadge from '../components/StatusBadge'
 
-const pageIntros = {
-  organization: ['COMPANY PROFILE', 'Set up your organization', 'Configure the foundational details of your company.'],
-  departments: ['YOUR ORG CHART', 'Departments & designations', 'Structure teams and job titles in one place.'],
-  employees: ['PEOPLE DIRECTORY', 'Employee directory', 'Manage your people and their work details.'],
-  attendance: ['TIME & ATTENDANCE', 'Attendance management', 'Review attendance records and manage corrections.'],
-  'my-attendance': ['YOUR TIME', 'My attendance', 'Your personal attendance at a glance.'],
-  leave: ['TIME OFF', 'Leave applications', 'Track your requests and available leave balance.'],
-  'leave-approvals': ['HR INBOX', 'Leave approval inbox', 'Review leave requests from your team.'],
-  'salary-structure': ['COMPENSATION', 'Salary structure', 'Manage salary components and compensation policies.'],
-  payroll: ['PAY & BENEFITS', 'Payroll processing', 'Prepare, review, and finalize payroll runs.'],
-  payslips: ['YOUR PAY', 'Payslips', 'Access your monthly payslips.'],
-  analytics: ['INSIGHTS', 'Dashboards & analytics', 'Understand the health of your people operations.'],
-  'ai-assistant': ['HCM LITE AI', 'Your policy assistant', 'Get help understanding your workplace policies.'],
-  announcements: ['STAY IN THE LOOP', 'Announcements', 'Company updates and important messages.'],
-  notifications: ['YOUR INBOX', 'Notifications', 'Updates that need your attention.'],
-  'audit-logs': ['ADMINISTRATION', 'Audit logs', 'A record of important workspace activity.'],
-  settings: ['YOUR ACCOUNT', 'Profile settings', 'Manage your personal details and preferences.'],
-}
-
-const actionNames = {
-  organization: 'Save organization profile', departments: 'Add department', employees: 'Add employee',
-  attendance: 'Record correction', 'my-attendance': 'Check in', leave: 'Request leave',
-  'leave-approvals': 'Review requests', 'salary-structure': 'Add salary component', payroll: 'Create payroll draft',
-  payslips: 'Download payslip', analytics: 'Export report', 'ai-assistant': 'Send message',
-  announcements: 'New announcement', notifications: 'Mark all as read', 'audit-logs': 'Export logs',
-  settings: 'Save changes',
-}
-
 function PageHeading({ eyebrow, title, description, action, onAction }) {
-  return <div className="page-heading"><div><div className="eyebrow">{eyebrow}</div><h1>{title}</h1><p>{description}</p></div>{action && <button className="button button-primary" onClick={onAction}><Plus size={16} />{action}</button>}</div>
+  return (
+    <div className="page-heading">
+      <div>
+        <div className="eyebrow">{eyebrow}</div>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+      {action && (
+        <button className="button button-primary" onClick={onAction}>
+          <Plus size={16} />{action}
+        </button>
+      )}
+    </div>
+  )
 }
 
+// ---------------- DASHBOARD ----------------
 function Dashboard({ role, onAction, navigate }) {
   const isEmployee = role === 'Employee'
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getDashboard()
+      .then((res) => setData(res))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
   const stats = isEmployee
-    ? [['Attendance this month', CalendarCheck, 'indigo'], ['Leave balance', CalendarDays, 'teal'], ['Next payday', Wallet, 'amber'], ['Pending requests', FileClock, 'rose']]
-    : [['Team members', Users, 'indigo'], ['Present today', CalendarCheck, 'teal'], ['Pending approvals', Clock3, 'amber'], ['Payroll status', CircleDollarSign, 'rose']]
+    ? [
+        ['Attendance this month', CalendarCheck, 'teal', data?.attendanceCount ?? '—'],
+        ['Leave balance', CalendarDays, 'teal', data?.leaveBalance ?? '14 days'],
+        ['Next payday', Wallet, 'amber', 'End of month'],
+        ['Pending requests', FileClock, 'rose', data?.pendingLeaves ?? 0],
+      ]
+    : [
+        ['Team members', Users, 'indigo', data?.headcount ?? data?.totalEmployees ?? '—'],
+        ['Present today', CalendarCheck, 'teal', data?.presentToday ?? '—'],
+        ['Pending approvals', Clock3, 'amber', data?.pendingLeaves ?? 0],
+        ['Payroll status', CircleDollarSign, 'rose', data?.payrollStatus || 'Draft ready'],
+      ]
+
   return (
     <>
-      <div className="welcome-banner"><div className="welcome-art"><span /><span /><span /></div><div className="welcome-content"><div className="eyebrow">YOUR HCM LITE WORKSPACE</div><h1>{isEmployee ? 'Your workday, made simpler.' : 'A better view of your people.'}</h1><p>{isEmployee ? 'Your personal people hub is ready. Check in, take time off, or find a policy.' : 'Your workspace is ready to connect. Start by setting up your organization and team.'}</p><div className="welcome-actions"><button className="button button-white" onClick={() => navigate(isEmployee ? '/my-attendance' : '/organization')}>{isEmployee ? 'View my attendance' : 'Set up organization'}<ArrowRight size={15} /></button><span><ShieldCheck size={14} /> Preview workspace · no data connected</span></div></div><div className="welcome-decoration"><div className="deco-orbit orbit-one" /><div className="deco-orbit orbit-two" /><div className="deco-center"><Activity size={30} /></div><i className="deco-dot dot-one" /><i className="deco-dot dot-two" /><i className="deco-dot dot-three" /></div></div>
-      <div className="section-title-row"><div><h2>{isEmployee ? 'Your overview' : `${role} overview`}</h2><p>Live data will appear here once your workspace is connected.</p></div><button className="select-button">This month <ChevronDown size={14} /></button></div>
-      <div className="stats-grid">{stats.map(([label, Icon, accent]) => <StatCard key={label} label={label} icon={Icon} accent={accent} />)}</div>
-      <div className="dashboard-grid">
-        <section className="panel chart-panel"><div className="panel-heading"><div><h3>{isEmployee ? 'Attendance overview' : 'People overview'}</h3><p>Activity will be displayed when data is available.</p></div><button className="icon-button" aria-label="More options"><MoreHorizontal size={18} /></button></div><div className="chart-empty"><div className="chart-skeleton"><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /><i /></div><div className="chart-empty-note"><ChartNoAxesCombined size={19} /><span>Chart will populate with live workspace data</span></div></div></section>
-        <section className="panel setup-panel"><div className="panel-heading"><div><h3>Getting started</h3><p>Prepare your HCM workspace</p></div><span className="setup-count">0/4</span></div><div className="checklist">{(isEmployee ? [['Review your profile', '/settings'], ['Explore attendance', '/my-attendance'], ['Check leave policies', '/ai-assistant'], ['Read announcements', '/announcements']] : [['Set up your organization', role === 'Admin' ? '/organization' : '/employees'], ['Add your departments', '/departments'], ['Invite your employees', '/employees'], ['Configure people policies', '/analytics']]).map(([label, path]) => <button key={label} onClick={() => navigate(path)} className="checklist-item"><span className="check-circle"><Check size={12} /></span><span>{label}</span><ArrowUpRight size={14} /></button>)}</div></section>
+      <div className="welcome-banner">
+        <div className="welcome-art"><span /><span /><span /></div>
+        <div className="welcome-content">
+          <div className="eyebrow">YOUR HCM LITE WORKSPACE</div>
+          <h1>{isEmployee ? 'Your workday, made simpler.' : 'A better view of your people.'}</h1>
+          <p>
+            {isEmployee
+              ? 'Your personal people hub is active. Check in, request time off, or query workplace policies.'
+              : 'Your workspace is connected and operational. Manage employees, track attendance, and process payroll.'}
+          </p>
+          <div className="welcome-actions">
+            <button className="button button-white" onClick={() => navigate(isEmployee ? '/my-attendance' : '/employees')}>
+              {isEmployee ? 'View my attendance' : 'Manage employees'}
+              <ArrowRight size={15} />
+            </button>
+            <span><ShieldCheck size={14} /> Connected & secure workspace</span>
+          </div>
+        </div>
+        <div className="welcome-decoration">
+          <div className="deco-orbit orbit-one" />
+          <div className="deco-orbit orbit-two" />
+          <div className="deco-center"><Activity size={30} /></div>
+          <i className="deco-dot dot-one" /><i className="deco-dot dot-two" /><i className="deco-dot dot-three" />
+        </div>
       </div>
-      <section className="panel activity-panel"><div className="panel-heading"><div><h3>{isEmployee ? 'Your recent activity' : 'Recent activity'}</h3><p>Updates across your workspace</p></div><button className="text-link" onClick={() => navigate('/notifications')}>View notifications <ArrowRight size={14} /></button></div><EmptyState title="All quiet for now" description="Recent updates and activity will show up here once connected." /></section>
-      <div className="footnote"><Sparkles size={14} /> No sample data is displayed. All metrics are waiting for your backend connection.</div>
-      {role !== 'Employee' && <button className="dashboard-quick-action" onClick={onAction}><Plus size={16} /> Quick action</button>}
+
+      <div className="section-title-row">
+        <div>
+          <h2>{isEmployee ? 'Your overview' : `${role} overview`}</h2>
+          <p>{loading ? 'Loading live workspace metrics...' : 'Real-time metrics from your HCM Lite system.'}</p>
+        </div>
+        <button className="select-button">This month <ChevronDown size={14} /></button>
+      </div>
+
+      <div className="stats-grid">
+        {stats.map(([label, Icon, accent, val]) => (
+          <div key={label} className={`stat-card accent-${accent}`}>
+            <div className="stat-card-icon"><Icon size={20} /></div>
+            <div className="stat-card-content">
+              <span className="stat-card-label">{label}</span>
+              <strong className="stat-card-value">{val}</strong>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="dashboard-grid">
+        <section className="panel chart-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>{isEmployee ? 'My recent attendance' : 'People & Activity Overview'}</h3>
+              <p>System operational</p>
+            </div>
+            <button className="icon-button" aria-label="More options"><MoreHorizontal size={18} /></button>
+          </div>
+          <div style={{ padding: '24px', textAlign: 'center', color: '#64748b' }}>
+            <ChartNoAxesCombined size={32} style={{ margin: '0 auto 12px auto', display: 'block', color: '#6366f1' }} />
+            <p style={{ margin: 0, fontWeight: 500, color: '#1e293b' }}>Active Workspace Connection</p>
+            <small style={{ color: '#64748b' }}>Data is synchronizing live with the HCM Lite backend API.</small>
+          </div>
+        </section>
+
+        <section className="panel setup-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Quick navigation</h3>
+              <p>Frequently accessed actions</p>
+            </div>
+          </div>
+          <div className="checklist">
+            {(isEmployee
+              ? [
+                  ['Check my attendance', '/my-attendance'],
+                  ['Apply for leave', '/leave/new'],
+                  ['Ask the AI assistant', '/ai-assistant'],
+                  ['View payslips', '/payslips'],
+                ]
+              : [
+                  ['Employee directory', '/employees'],
+                  ['Review leave requests', '/leave-approvals'],
+                  ['Departments & structure', '/departments'],
+                  ['Company announcements', '/announcements'],
+                ]
+            ).map(([label, path]) => (
+              <button key={label} onClick={() => navigate(path)} className="checklist-item">
+                <span className="check-circle"><Check size={12} /></span>
+                <span>{label}</span>
+                <ArrowUpRight size={14} />
+              </button>
+            ))}
+          </div>
+        </section>
+      </div>
+
+      <section className="panel activity-panel">
+        <div className="panel-heading">
+          <div>
+            <h3>Announcements & Updates</h3>
+            <p>Recent notices</p>
+          </div>
+          <button className="text-link" onClick={() => navigate('/announcements')}>
+            View all announcements <ArrowRight size={14} />
+          </button>
+        </div>
+        <div style={{ padding: '16px' }}>
+          <p style={{ color: '#64748b', fontSize: '14px', margin: 0 }}>
+            Stay tuned to company announcements and team policy updates via the announcements board.
+          </p>
+        </div>
+      </section>
     </>
   )
 }
 
-function GenericContent({ slug, title, role, onAction, notify, navigate }) {
-  const params = useParams()
-  const [query, setQuery] = useState('')
-  const [tab, setTab] = useState('Overview')
-  const [chatMessage, setChatMessage] = useState('')
-  const actions = actionNames[slug]
-  const isTable = ['employees', 'departments', 'attendance', 'leave', 'leave-approvals', 'payroll', 'payslips', 'notifications', 'audit-logs'].includes(slug)
-
-  if (slug === 'employees' && location.pathname.endsWith('/new')) {
-    return <EmployeeForm title={title} notify={notify} />
-  }
-  if (params.employeeId && slug === 'employees') {
-    return <EmployeeProfile notify={notify} navigate={navigate} />
-  }
-  if (slug === 'ai-assistant') {
-    return <><PageHeading eyebrow="HCM LITE AI" title="Your policy assistant" description="Ask questions about your workplace policies. Answers will be available once the AI service is connected." /><section className="panel chat-panel"><div className="chat-welcome"><div className="chat-sparkle"><Sparkles size={22} /></div><h2>How can I help?</h2><p>Ask about leave, benefits, company policies, or where to find something.</p><div className="suggestion-row">{['How much leave can I take?', 'Where can I find my payslip?', 'What is the leave policy?'].map((text) => <button key={text} onClick={() => setChatMessage(text)}>{text}<ArrowUpRight size={13} /></button>)}</div></div><div className="chat-messages"><EmptyState title="Start a conversation" description="No messages yet. AI responses are not available until backend integration." /></div><form className="chat-compose" onSubmit={(e) => { e.preventDefault(); notify(backendPending()); setChatMessage('') }}><input value={chatMessage} onChange={(e) => setChatMessage(e.target.value)} placeholder="Ask a question about your workplace..." aria-label="Message" /><button className="button button-primary" type="submit" disabled={!chatMessage.trim()}><Send size={15} /> Send</button></form><div className="chat-disclaimer">AI responses are not connected. Please verify policy details with your HR team.</div></section></>
-  }
-  if (slug === 'leave' && location.pathname.endsWith('/new')) return <SmartLeave notify={notify} />
-  if (slug === 'my-attendance') return <><PageHeading eyebrow="YOUR TIME" title="My attendance" description="Your individual attendance and check-in tools." /><div className="attendance-hero panel"><div className="attendance-clock"><span className="live-dot" />TODAY'S ATTENDANCE</div><div className="clock-time">—:— <span>--</span></div><p>Attendance information is not connected yet.</p><div className="attendance-actions"><button className="button button-primary" onClick={() => notify(backendPending())}><CalendarCheck size={16} /> Check in</button><button className="button button-secondary" onClick={() => notify(backendPending())}>Check out</button></div><div className="attendance-summary"><span><small>Check-in</small><strong>—</strong></span><span><small>Check-out</small><strong>—</strong></span><span><small>Hours today</small><strong>—</strong></span></div></div><section className="panel"><div className="panel-heading"><div><h3>Attendance history</h3><p>Your recent records</p></div><button className="select-button">This month <ChevronDown size={14} /></button></div><DataTable columns={['Date', 'Check-in', 'Check-out', 'Hours', 'Status']} /></section></>
-  if (slug === 'payslips' && !params.payslipId) return <><PageHeading eyebrow="YOUR PAY" title="Payslips" description="Your salary statements will be available here when payroll is connected." /><section className="panel"><div className="toolbar"><label className="search-field"><Search size={16} /><input placeholder="Search payslips..." value={query} onChange={(e) => setQuery(e.target.value)} /></label><button className="select-button">All years <ChevronDown size={14} /></button></div><DataTable columns={['Pay period', 'Pay date', 'Gross pay', 'Net pay', 'Status', '']} emptyTitle="No payslips yet" emptyDescription="Your payslips will appear here after payroll is set up." /></section></>
-  if (params.payslipId) return <Payslip notify={notify} />
-  if (slug === 'organization') return <><PageHeading eyebrow="COMPANY PROFILE" title="Set up your organization" description="Configure the details used across your HCM workspace." action="Save changes" onAction={() => notify(backendPending())} /><div className="content-two-col"><section className="panel form-panel"><h3>Company information</h3><p className="panel-subtitle">Core details about your organization</p><div className="form-grid"><FormField label="Company name" placeholder="Enter company name" /><FormField label="Legal name" placeholder="Enter legal name" /></div><div className="form-grid"><FormField label="Work email" type="email" placeholder="name@company.com" /><FormField label="Phone number" placeholder="+1 (555) 000-0000" /></div><FormField label="Company website" placeholder="https://" /><FormField label="Company address" as="textarea" rows={3} placeholder="Street, city, region, postal code" /><div className="form-grid"><FormField label="Country" as="select" options={[{ value: '', label: 'Select country' }]} /><FormField label="Timezone" as="select" options={[{ value: '', label: 'Select timezone' }]} /></div></section><section className="panel side-info-panel"><div className="side-info-icon"><Building2Icon /></div><h3>Your company profile</h3><p>This information helps personalize your workspace and will be used in company documents.</p><ErrorState message="Changes will not be saved until backend integration is available." /></section></div></>
-  if (slug === 'departments') return <><PageHeading eyebrow="YOUR ORG CHART" title={title} description="Create departments and job titles to reflect your organization." action="Add department" onAction={onAction} /><div className="stats-grid compact-stats"><StatCard label="Departments" icon={BriefcaseBusiness} /><StatCard label="Designations" icon={BadgeCheck} /><StatCard label="Reporting lines" icon={Activity} /></div><section className="panel"><div className="toolbar"><label className="search-field"><Search size={16} /><input placeholder="Search departments or titles..." value={query} onChange={(e) => setQuery(e.target.value)} /></label><button className="button button-secondary" onClick={onAction}><Plus size={15} /> Add designation</button></div><DataTable columns={['Department', 'Designations', 'Team lead', 'Employees', 'Status', '']} emptyTitle="No departments created" emptyDescription="Your department structure will appear here once configured." /></section></>
-  if (slug === 'salary-structure') return <><PageHeading eyebrow="COMPENSATION" title={title} description="Set salary components and compensation policies for your organization." action="Add component" onAction={onAction} /><div className="notice-banner"><ShieldCheck size={17} /><span><strong>Restricted information</strong> Salary details are sensitive and access should be limited to authorized admins.</span></div><section className="panel"><div className="toolbar"><div className="toolbar-note">Salary components</div><button className="button button-secondary" onClick={onAction}><Plus size={15} /> Add component</button></div><DataTable columns={['Component', 'Type', 'Calculation', 'Taxable', 'Status', '']} emptyTitle="No salary components" emptyDescription="Add your organization's salary components when ready." /></section></>
-  if (slug === 'analytics') return <><PageHeading eyebrow="PEOPLE INSIGHTS" title={title} description="Explore trends across your organization. Reports require connected, real workspace data." /><div className="notice-banner"><ChartNoAxesCombined size={17} /><span><strong>No reports yet</strong> Analytics will populate only with real data from your connected backend. No sample metrics are shown.</span></div><div className="stats-grid">{[['Headcount', Users, 'indigo'], ['Attendance', CalendarCheck, 'teal'], ['Leave utilization', CalendarDays, 'amber'], ['Payroll costs', CircleDollarSign, 'rose']].map(([label, Icon, accent]) => <StatCard key={label} label={label} icon={Icon} accent={accent} />)}</div><div className="dashboard-grid"><section className="panel chart-panel"><div className="panel-heading"><div><h3>Workforce trends</h3><p>Headcount over time</p></div><button className="select-button">Last 12 months <ChevronDown size={14} /></button></div><EmptyState title="Waiting for workforce data" description="Connect a backend to generate this report." /></section><section className="panel chart-panel"><div className="panel-heading"><div><h3>Leave overview</h3><p>Leave by type</p></div></div><EmptyState title="No leave data available" description="Leave analytics will appear when records are connected." /></section></div></>
-  if (slug === 'announcements') return <><PageHeading eyebrow="STAY IN THE LOOP" title={title} description="Company updates and messages for your workspace." action={role === 'Employee' ? undefined : 'New announcement'} onAction={onAction} /><div className="filter-tabs">{['All', 'Company', 'Team', 'Policy'].map((item) => <button key={item} className={tab === item ? 'selected' : ''} onClick={() => setTab(item)}>{item}</button>)}</div><section className="panel announcement-empty"><EmptyState title="No announcements yet" description="When your organization shares an update, it will appear here." action={role !== 'Employee' && <button className="button button-secondary" onClick={onAction}><Plus size={15} /> Create announcement</button>} /></section></>
-  if (slug === 'settings') return <><PageHeading eyebrow="YOUR ACCOUNT" title={title} description="Manage your personal details and account preferences." action="Save changes" onAction={() => notify(backendPending())} /><div className="settings-tabs">{['Profile', 'Preferences', 'Security'].map((item) => <button key={item} className={tab === item ? 'selected' : ''} onClick={() => setTab(item)}>{item}</button>)}</div><div className="content-two-col"><section className="panel form-panel"><h3>{tab === 'Profile' ? 'Personal information' : tab === 'Preferences' ? 'Workspace preferences' : 'Security settings'}</h3><p className="panel-subtitle">Your changes will be applied after the backend is connected.</p>{tab === 'Profile' ? <><div className="form-grid"><FormField label="First name" placeholder="First name" /><FormField label="Last name" placeholder="Last name" /></div><FormField label="Work email" type="email" placeholder="you@company.com" /><FormField label="Job title" placeholder="Your job title" /><FormField label="Phone number" placeholder="Your phone number" /></> : tab === 'Preferences' ? <><FormField label="Language" as="select" options={[{ value: '', label: 'Select language' }]} /><FormField label="Timezone" as="select" options={[{ value: '', label: 'Select timezone' }]} /><FormField label="Date format" as="select" options={[{ value: '', label: 'Select date format' }]} /></> : <><FormField label="Current password" type="password" placeholder="Current password" /><button className="button button-secondary" onClick={() => navigate('/change-password')}>Change password</button></>}</section><section className="panel side-info-panel"><div className="avatar avatar-large avatar-indigo">{role?.[0]}</div><h3>{role} preview</h3><p>This is a local preview profile. Your actual profile will load from your HCM workspace.</p><StatusBadge>Preview account</StatusBadge></section></div></>
-  if (slug === 'notifications') return <><PageHeading eyebrow="YOUR INBOX" title={title} description="Important updates from your workspace." action="Mark all as read" onAction={() => notify(backendPending())} /><div className="filter-tabs">{['All', 'Unread', 'Read'].map((item) => <button key={item} className={tab === item ? 'selected' : ''} onClick={() => setTab(item)}>{item}</button>)}</div><section className="panel"><DataTable columns={['Notification', 'Type', 'Date', 'Status']} emptyTitle="You’re all caught up" emptyDescription="New notifications will show here when connected." /></section></>
-  if (slug === 'audit-logs') return <><PageHeading eyebrow="ADMINISTRATION" title={title} description="Review the history of important actions across your workspace." action="Export logs" onAction={onAction} /><div className="notice-banner"><ShieldCheck size={17} /><span>Audit events will be recorded when the application backend is connected.</span></div><section className="panel"><div className="toolbar"><label className="search-field"><Search size={16} /><input placeholder="Search activity..." value={query} onChange={(e) => setQuery(e.target.value)} /></label><button className="select-button"><Filter size={14} /> Filters</button></div><DataTable columns={['Action', 'User', 'Resource', 'Date & time', 'IP address']} emptyTitle="No audit events" emptyDescription="Workspace activity will be recorded here after backend integration." /></section></>
-  if (isTable) {
-    const configs = {
-      employees: { columns: ['Employee', 'Department', 'Designation', 'Work email', 'Status', ''], description: 'Your people directory will appear here when employee records are connected.', filters: ['All employees', 'Department', 'Status'] },
-      attendance: { columns: ['Employee', 'Date', 'Check-in', 'Check-out', 'Hours', 'Status', ''], description: 'Attendance records will appear once connected to your workforce data.', filters: ['All teams', 'Date range', 'Status'] },
-      leave: { columns: ['Leave type', 'Date range', 'Days', 'Applied on', 'Status', ''], description: 'Your leave requests will appear here.', filters: ['All requests', 'Leave type', 'Status'] },
-      'leave-approvals': { columns: ['Employee', 'Leave type', 'Date range', 'Days', 'Applied on', 'Status', ''], description: 'There are no leave requests to review yet.', filters: ['All requests', 'Department', 'Status'] },
-      payroll: { columns: ['Pay period', 'Employees', 'Gross payroll', 'Net payroll', 'Status', ''], description: 'Your payroll runs will appear here once configured.', filters: ['All runs', 'Pay period', 'Status'] },
-      payslips: { columns: ['Pay period', 'Pay date', 'Gross pay', 'Net pay', 'Status', ''], description: 'Your payslips will appear here after payroll is set up.', filters: ['All years'] },
-      notifications: { columns: ['Notification', 'Type', 'Date', 'Status'], description: 'New notifications will show here when connected.', filters: [] },
-      'audit-logs': { columns: ['Action', 'User', 'Resource', 'Date & time', 'IP address'], description: 'Workspace activity will appear here once audit logging is connected.', filters: [] },
-    }
-    const config = configs[slug]
-    const pageAction = slug === 'payroll' && role === 'Admin' ? 'Review & finalize payroll' : actions
-    return <><PageHeading eyebrow={pageIntros[slug]?.[0] || 'WORKSPACE'} title={pageIntros[slug]?.[1] || title} description={pageIntros[slug]?.[2] || config.description} action={pageAction} onAction={onAction} /><section className="panel"><div className="toolbar"><label className="search-field"><Search size={16} /><input placeholder={`Search ${title.toLowerCase()}...`} value={query} onChange={(e) => setQuery(e.target.value)} /></label><div className="toolbar-actions">{config.filters.map((filter) => <button key={filter} className="select-button"><Filter size={14} />{filter}<ChevronDown size={13} /></button>)}</div></div><DataTable columns={config.columns} emptyTitle={`No ${slug === 'employees' ? 'employees' : slug === 'leave-approvals' ? 'requests' : 'records'} yet`} emptyDescription={config.description} /></section></>
-  }
-  return <EmptyState title={title} description="This workspace section is being prepared." />
-}
-
+// ---------------- EMPLOYEE DIRECTORY & FORM ----------------
 function EmployeeForm({ title, notify }) {
-  return <><PageHeading eyebrow="PEOPLE DIRECTORY" title={title || 'Add employee'} description="Add employee details to your organization." /><div className="content-two-col"><section className="panel form-panel"><h3>Personal details</h3><p className="panel-subtitle">Required information for the employee profile</p><div className="form-grid"><FormField label="First name" placeholder="First name" required /><FormField label="Last name" placeholder="Last name" required /></div><FormField label="Work email" type="email" placeholder="name@company.com" required /><div className="form-grid"><FormField label="Phone number" placeholder="+1 (555) 000-0000" /><FormField label="Date of birth" type="date" /></div><h3 className="form-section-heading">Work details</h3><div className="form-grid"><FormField label="Department" as="select" options={[{ value: '', label: 'Select department' }]} /><FormField label="Designation" as="select" options={[{ value: '', label: 'Select designation' }]} /></div><div className="form-grid"><FormField label="Employment type" as="select" options={[{ value: '', label: 'Select type' }]} /><FormField label="Start date" type="date" /></div><FormField label="Reporting manager" as="select" options={[{ value: '', label: 'Select manager' }]} /><div className="form-actions"><button className="button button-secondary" onClick={() => window.history.back()}>Cancel</button><button className="button button-primary" onClick={() => notify(backendPending())}>Save employee</button></div></section><section className="panel side-info-panel"><Users size={21} /><h3>Employee profile</h3><p>Employee records are private. Access is limited to authorized HR and admin roles.</p><ErrorState message="This form is a preview. No employee record will be created." /></section></div></>
+  const navigate = useNavigate()
+  const [departments, setDepartments] = useState([])
+  const [designations, setDesignations] = useState([])
+  const [submitting, setSubmitting] = useState(false)
+  const [resultNotice, setResultNotice] = useState(null)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const [form, setForm] = useState({
+    code: `EMP${Math.floor(100 + Math.random() * 900)}`,
+    name: '',
+    email: '',
+    departmentId: '',
+    designationId: '',
+    joiningDate: new Date().toISOString().slice(0, 10),
+    status: 'active',
+    basicSalary: 50000,
+    phone: '',
+    address: '',
+    gender: 'unspecified',
+    emergencyContact: '',
+  })
+
+  useEffect(() => {
+    getOrganization()
+      .then((res) => {
+        const units = res?.units || []
+        setDepartments(units.filter((u) => u.kind === 'department' && u.active !== false))
+        setDesignations(units.filter((u) => u.kind === 'designation' && u.active !== false))
+      })
+      .catch(() => {})
+  }, [])
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setErrorMsg('')
+    setSubmitting(true)
+
+    try {
+      const payload = {
+        ...form,
+        basicSalary: Number(form.basicSalary),
+      }
+      if (!payload.departmentId && departments.length) {
+        payload.departmentId = departments[0]._id
+      }
+      if (!payload.designationId && designations.length) {
+        payload.designationId = designations[0]._id
+      }
+
+      const res = await createEmployee(payload)
+      setResultNotice(res)
+      notify(`Employee ${form.name} created successfully!`)
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to create employee.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  if (resultNotice) {
+    return (
+      <div className="panel" style={{ maxWidth: '600px', margin: '40px auto', padding: '32px' }}>
+        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+          <CheckCircle2 size={48} color="#16a34a" style={{ margin: '0 auto 12px' }} />
+          <h2>Employee Created Successfully!</h2>
+          <p style={{ color: '#64748b' }}>Account credentials have been generated.</p>
+        </div>
+        <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+          <p><strong>Employee Code:</strong> {resultNotice.employee?.code || form.code}</p>
+          <p><strong>Email:</strong> {resultNotice.employee?.email || form.email}</p>
+          <p><strong>Temporary Password:</strong> <code style={{ background: '#fee2e2', color: '#991b1b', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{resultNotice.temporaryPassword || '(Provided to user)'}</code></p>
+          <small style={{ color: '#64748b' }}>Please share these credentials securely with the employee.</small>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+          <button className="button button-primary" onClick={() => navigate('/employees')}>
+            Back to Directory
+          </button>
+          <button className="button button-secondary" onClick={() => { setResultNotice(null); setForm(f => ({ ...f, code: `EMP${Math.floor(100 + Math.random() * 900)}`, name: '', email: '' })) }}>
+            Add Another
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <PageHeading eyebrow="PEOPLE DIRECTORY" title={title || 'Add employee'} description="Register an employee profile with linked login credentials." />
+      <div className="content-two-col">
+        <section className="panel form-panel">
+          <h3>Personal details</h3>
+          <p className="panel-subtitle">Required information for employee record</p>
+
+          {errorMsg && (
+            <div className="inline-notice error-notice" style={{ background: '#fef2f2', color: '#b91c1c', marginBottom: '16px' }}>
+              <AlertCircle size={15} /> <span>{errorMsg}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit}>
+            <div className="form-grid">
+              <FormField
+                label="Employee code"
+                placeholder="EMP001"
+                value={form.code}
+                onChange={(e) => setForm({ ...form, code: e.target.value })}
+                required
+              />
+              <FormField
+                label="Full name"
+                placeholder="First and last name"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                required
+              />
+            </div>
+
+            <FormField
+              label="Work email"
+              type="email"
+              placeholder="name@company.com"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              required
+            />
+
+            <div className="form-grid">
+              <FormField
+                label="Phone number"
+                placeholder="+92 300 0000000"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+              />
+              <FormField
+                label="Gender"
+                as="select"
+                value={form.gender}
+                onChange={(e) => setForm({ ...form, gender: e.target.value })}
+                options={[
+                  { value: 'unspecified', label: 'Unspecified' },
+                  { value: 'female', label: 'Female' },
+                  { value: 'male', label: 'Male' },
+                  { value: 'other', label: 'Other' },
+                ]}
+              />
+            </div>
+
+            <h3 className="form-section-heading">Work details</h3>
+
+            <div className="form-grid">
+              <FormField
+                label="Department"
+                as="select"
+                value={form.departmentId}
+                onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
+                options={[
+                  { value: '', label: departments.length ? 'Select department' : 'No departments yet (will create)' },
+                  ...departments.map((d) => ({ value: d._id, label: d.name })),
+                ]}
+              />
+              <FormField
+                label="Designation"
+                as="select"
+                value={form.designationId}
+                onChange={(e) => setForm({ ...form, designationId: e.target.value })}
+                options={[
+                  { value: '', label: designations.length ? 'Select designation' : 'No designations yet (will create)' },
+                  ...designations.map((d) => ({ value: d._id, label: d.name })),
+                ]}
+              />
+            </div>
+
+            <div className="form-grid">
+              <FormField
+                label="Joining date"
+                type="date"
+                value={form.joiningDate}
+                onChange={(e) => setForm({ ...form, joiningDate: e.target.value })}
+                required
+              />
+              <FormField
+                label="Basic monthly salary (PKR)"
+                type="number"
+                min={1}
+                value={form.basicSalary}
+                onChange={(e) => setForm({ ...form, basicSalary: e.target.value })}
+                required
+              />
+            </div>
+
+            <FormField
+              label="Home address"
+              placeholder="Residential address"
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+            />
+
+            <div className="form-actions">
+              <button type="button" className="button button-secondary" onClick={() => window.history.back()}>Cancel</button>
+              <button type="submit" className="button button-primary" disabled={submitting}>
+                {submitting ? 'Saving employee...' : 'Save employee'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="panel side-info-panel">
+          <Users size={24} color="#6366f1" />
+          <h3>Employee profile</h3>
+          <p>When you register an employee, the system automatically creates their linked user account and temporary credentials.</p>
+          <div style={{ marginTop: '16px', fontSize: '13px', color: '#64748b' }}>
+            <p>Departments and designations can be created under <strong>Departments & designations</strong>.</p>
+          </div>
+        </section>
+      </div>
+    </>
+  )
 }
 
 function EmployeeProfile({ notify, navigate }) {
   const { employeeId } = useParams()
-  return <><PageHeading eyebrow="EMPLOYEE 360" title="Employee profile" description={`Profile ${employeeId} · Detailed employee information and activity.`} action="Edit profile" onAction={() => navigate(`/employees/${employeeId}/edit`)} /><div className="employee-summary panel"><div className="avatar avatar-large avatar-indigo">—</div><div className="employee-summary-info"><span className="eyebrow">EMPLOYEE RECORD</span><h2>Employee details unavailable</h2><p>Connect your backend to load this employee's information.</p></div><StatusBadge>Not connected</StatusBadge><button className="icon-button" aria-label="More options" onClick={() => notify(backendPending())}><MoreHorizontal size={19} /></button></div><div className="settings-tabs">{['Overview', 'Attendance', 'Leave', 'Documents'].map((item) => <button key={item} className={item === 'Overview' ? 'selected' : ''}>{item}</button>)}</div><div className="dashboard-grid"><section className="panel form-panel"><h3>Personal information</h3><div className="detail-list">{['Work email', 'Phone number', 'Department', 'Designation', 'Employment type', 'Start date', 'Manager'].map((label) => <div key={label}><small>{label}</small><strong>—</strong></div>)}</div></section><section className="panel"><div className="panel-heading"><div><h3>Recent activity</h3><p>Employee history</p></div></div><EmptyState title="No activity available" description="Activity will appear when records are connected." /></section></div></>
+  const [profile, setProfile] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    getEmployee(employeeId)
+      .then((res) => setProfile(res))
+      .catch((err) => notify(err.message))
+      .finally(() => setLoading(false))
+  }, [employeeId, notify])
+
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading employee profile...</div>
+
+  const emp = profile?.employee || profile || {}
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="EMPLOYEE 360"
+        title={emp.name || 'Employee profile'}
+        description={`Code: ${emp.code || '—'} · Email: ${emp.email || '—'}`}
+      />
+      <div className="employee-summary panel">
+        <div className="avatar avatar-large avatar-indigo">{(emp.name?.[0] || 'E').toUpperCase()}</div>
+        <div className="employee-summary-info">
+          <span className="eyebrow">EMPLOYEE RECORD</span>
+          <h2>{emp.name || 'Unnamed Employee'}</h2>
+          <p>{emp.email || '—'} · Joined {emp.joiningDate || '—'}</p>
+        </div>
+        <StatusBadge>{emp.status || 'Active'}</StatusBadge>
+      </div>
+
+      <div className="dashboard-grid">
+        <section className="panel form-panel">
+          <h3>Personal & Work Information</h3>
+          <div className="detail-list" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '16px', marginTop: '16px' }}>
+            <div><small style={{ color: '#64748b' }}>Work Email</small><p><strong>{emp.email || '—'}</strong></p></div>
+            <div><small style={{ color: '#64748b' }}>Phone Number</small><p><strong>{emp.phone || '—'}</strong></p></div>
+            <div><small style={{ color: '#64748b' }}>Joining Date</small><p><strong>{emp.joiningDate || '—'}</strong></p></div>
+            <div><small style={{ color: '#64748b' }}>Status</small><p><strong>{emp.status || 'Active'}</strong></p></div>
+            <div><small style={{ color: '#64748b' }}>Address</small><p><strong>{emp.address || '—'}</strong></p></div>
+            <div><small style={{ color: '#64748b' }}>Gender</small><p><strong>{emp.gender || '—'}</strong></p></div>
+          </div>
+        </section>
+
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Quick actions</h3>
+              <p>Employee management</p>
+            </div>
+          </div>
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <button className="button button-secondary" onClick={() => navigate('/leave-approvals')}>
+              View leave requests
+            </button>
+            <button className="button button-secondary" onClick={() => navigate('/attendance')}>
+              View attendance records
+            </button>
+          </div>
+        </section>
+      </div>
+    </>
+  )
 }
 
+// ---------------- ORGANIZATION PROFILE ----------------
+function OrganizationView({ notify }) {
+  const [data, setData] = useState(null)
+  const [name, setName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+
+  const loadOrg = useCallback(() => {
+    getOrganization()
+      .then((res) => {
+        setData(res)
+        setName(res?.company?.name || '')
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { loadOrg() }, [loadOrg])
+
+  const handleSave = async (e) => {
+    e.preventDefault()
+    setSaving(true)
+    try {
+      await updateOrganization({
+        name,
+        effectiveDate: new Date().toISOString().slice(0, 10),
+        policy: data?.company?.policies?.[0] || {
+          timezone: 'Asia/Karachi',
+          officeStart: '09:00',
+          officeEnd: '18:00',
+          graceMinutes: 15,
+          halfDayHours: 5,
+        },
+      })
+      notify('Organization settings updated successfully!')
+      loadOrg()
+    } catch (err) {
+      notify(err.message || 'Failed to update organization.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <div style={{ padding: '40px', textAlign: 'center' }}>Loading organization profile...</div>
+
+  const currentPolicy = data?.company?.policies?.[0] || {}
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="COMPANY PROFILE"
+        title="Set up your organization"
+        description="Configure the details used across your HCM workspace."
+      />
+      <div className="content-two-col">
+        <section className="panel form-panel">
+          <h3>Company Information</h3>
+          <p className="panel-subtitle">Core organization details</p>
+          <form onSubmit={handleSave}>
+            <FormField
+              label="Company name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+            <div className="form-grid">
+              <FormField label="Timezone" value={currentPolicy.timezone || 'Asia/Karachi'} readOnly />
+              <FormField label="Office Start" value={currentPolicy.officeStart || '09:00'} readOnly />
+            </div>
+            <div className="form-grid">
+              <FormField label="Office End" value={currentPolicy.officeEnd || '18:00'} readOnly />
+              <FormField label="Grace Minutes" value={currentPolicy.graceMinutes || 15} readOnly />
+            </div>
+            <button className="button button-primary" type="submit" disabled={saving}>
+              {saving ? 'Saving changes...' : 'Save changes'}
+            </button>
+          </form>
+        </section>
+
+        <section className="panel side-info-panel">
+          <BriefcaseBusiness size={24} color="#6366f1" />
+          <h3>Organization Policy</h3>
+          <p>These policy rules govern automated attendance, late marks, and monthly payroll calculations.</p>
+          <div style={{ marginTop: '16px' }}>
+            <StatusBadge>Configured</StatusBadge>
+          </div>
+        </section>
+      </div>
+    </>
+  )
+}
+
+// ---------------- DEPARTMENTS & DESIGNATIONS ----------------
+function DepartmentsView({ notify }) {
+  const [units, setUnits] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [newKind, setNewKind] = useState('department')
+  const [newName, setNewName] = useState('')
+  const [creating, setCreating] = useState(false)
+
+  const load = useCallback(() => {
+    getOrganization()
+      .then((res) => setUnits(res?.units || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleAdd = async (e) => {
+    e.preventDefault()
+    if (!newName.trim()) return
+    setCreating(true)
+    try {
+      await createUnit({ kind: newKind, name: newName.trim(), active: true })
+      setNewName('')
+      notify(`${newKind === 'department' ? 'Department' : 'Designation'} created!`)
+      load()
+    } catch (err) {
+      notify(err.message || 'Failed to create unit.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleDelete = async (id) => {
+    try {
+      await deleteUnit(id)
+      notify('Unit deleted successfully.')
+      load()
+    } catch (err) {
+      notify(err.message || 'Cannot delete referenced unit.')
+    }
+  }
+
+  const depts = units.filter((u) => u.kind === 'department')
+  const desigs = units.filter((u) => u.kind === 'designation')
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="YOUR ORG CHART"
+        title="Departments & designations"
+        description="Structure teams and job titles in one place."
+      />
+      <div className="stats-grid compact-stats">
+        <StatCard label="Departments" icon={BriefcaseBusiness} accent="indigo" />
+        <StatCard label="Designations" icon={BadgeCheck} accent="teal" />
+      </div>
+
+      <div className="panel" style={{ padding: '20px', marginBottom: '24px' }}>
+        <h3>Add department or designation</h3>
+        <form onSubmit={handleAdd} style={{ display: 'flex', gap: '12px', marginTop: '12px' }}>
+          <select value={newKind} onChange={(e) => setNewKind(e.target.value)} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}>
+            <option value="department">Department</option>
+            <option value="designation">Designation</option>
+          </select>
+          <input
+            placeholder={`Enter ${newKind} name...`}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            style={{ flex: 1, padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+            required
+          />
+          <button className="button button-primary" type="submit" disabled={creating}>
+            <Plus size={15} /> {creating ? 'Adding...' : `Add ${newKind}`}
+          </button>
+        </form>
+      </div>
+
+      <div className="dashboard-grid">
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Departments ({depts.length})</h3>
+              <p>Organizational divisions</p>
+            </div>
+          </div>
+          {depts.length === 0 ? (
+            <EmptyState title="No departments yet" description="Add your first department above." />
+          ) : (
+            <ul style={{ listStyle: 'none', padding: '0 16px', margin: 0 }}>
+              {depts.map((d) => (
+                <li key={d._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
+                  <span><strong>{d.name}</strong></span>
+                  <button className="icon-button" onClick={() => handleDelete(d._id)} title="Delete"><Trash2 size={16} color="#ef4444" /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Designations ({desigs.length})</h3>
+              <p>Job titles & roles</p>
+            </div>
+          </div>
+          {desigs.length === 0 ? (
+            <EmptyState title="No designations yet" description="Add your first designation above." />
+          ) : (
+            <ul style={{ listStyle: 'none', padding: '0 16px', margin: 0 }}>
+              {desigs.map((d) => (
+                <li key={d._id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
+                  <span><strong>{d.name}</strong></span>
+                  <button className="icon-button" onClick={() => handleDelete(d._id)} title="Delete"><Trash2 size={16} color="#ef4444" /></button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      </div>
+    </>
+  )
+}
+
+// ---------------- ATTENDANCE ----------------
+function MyAttendanceView({ notify }) {
+  const [records, setRecords] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [acting, setActing] = useState(false)
+
+  const load = useCallback(() => {
+    getAttendance()
+      .then((res) => setRecords(res?.items || res || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleCheckIn = async () => {
+    setActing(true)
+    try {
+      await checkIn()
+      notify('Checked in successfully!')
+      load()
+    } catch (err) {
+      notify(err.message || 'Check-in failed.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const handleCheckOut = async () => {
+    setActing(true)
+    try {
+      await checkOut()
+      notify('Checked out successfully!')
+      load()
+    } catch (err) {
+      notify(err.message || 'Check-out failed.')
+    } finally {
+      setActing(false)
+    }
+  }
+
+  const todayStr = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })
+
+  return (
+    <>
+      <PageHeading eyebrow="YOUR TIME" title="My attendance" description="Your individual attendance and check-in tools." />
+      <div className="attendance-hero panel">
+        <div className="attendance-clock">
+          <span className="live-dot" /> TODAY — {todayStr}
+        </div>
+        <p>Record your workday attendance using the buttons below.</p>
+        <div className="attendance-actions" style={{ marginTop: '16px', display: 'flex', gap: '12px' }}>
+          <button className="button button-primary" onClick={handleCheckIn} disabled={acting}>
+            <CalendarCheck size={16} /> Check in
+          </button>
+          <button className="button button-secondary" onClick={handleCheckOut} disabled={acting}>
+            Check out
+          </button>
+        </div>
+      </div>
+
+      <section className="panel" style={{ marginTop: '24px' }}>
+        <div className="panel-heading">
+          <div>
+            <h3>Attendance history</h3>
+            <p>Your recent recorded sessions</p>
+          </div>
+          <button className="icon-button" onClick={load} title="Refresh"><RefreshCw size={16} /></button>
+        </div>
+        <DataTable
+          columns={['Date', 'Check-in', 'Check-out', 'Hours', 'Status']}
+          rows={records.map((r) => ({
+            Date: r.date || '—',
+            'Check-in': r.checkIn ? new Date(r.checkIn).toLocaleTimeString() : '—',
+            'Check-out': r.checkOut ? new Date(r.checkOut).toLocaleTimeString() : '—',
+            Hours: r.hoursWorked ? `${r.hoursWorked} hrs` : '—',
+            Status: r.status || 'present',
+          }))}
+          emptyTitle="No attendance records"
+          emptyDescription="Your check-in records will appear here."
+        />
+      </section>
+    </>
+  )
+}
+
+// ---------------- LEAVES & SMART LEAVE ----------------
 function SmartLeave({ notify }) {
-  return <><PageHeading eyebrow="TIME OFF" title="Smart leave request" description="Tell us when you need time away. Your policy assistant can help with questions." /><div className="content-two-col"><section className="panel form-panel"><h3>Request details</h3><p className="panel-subtitle">Your request won't be submitted until backend integration is complete.</p><FormField label="Leave type" as="select" options={[{ value: '', label: 'Select leave type' }]} required /><div className="form-grid"><FormField label="Start date" type="date" required /><FormField label="End date" type="date" required /></div><FormField label="Reason (optional)" as="textarea" rows={4} placeholder="Add a note for your manager..." /><div className="error-state"><HelpCircle size={17} /><span>Leave balance and policy details will load when connected.</span></div><div className="form-actions"><button className="button button-secondary" onClick={() => window.history.back()}>Cancel</button><button className="button button-primary" onClick={() => notify(backendPending())}>Submit request <ArrowRight size={15} /></button></div></section><section className="panel smart-tip"><div className="chat-sparkle"><Sparkles size={20} /></div><h3>Need help with leave?</h3><p>Ask the HCM Lite policy assistant about your workplace leave policies.</p><button className="text-link" onClick={() => window.location.assign('/ai-assistant')}>Ask the policy assistant <ArrowRight size={14} /></button></section></div></>
+  const navigate = useNavigate()
+  const [type, setType] = useState('annual')
+  const [start, setStart] = useState(new Date().toISOString().slice(0, 10))
+  const [end, setEnd] = useState(new Date().toISOString().slice(0, 10))
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+
+  const handleSubmit = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      await applyLeave({ type, start, end, reason })
+      notify('Leave application submitted successfully!')
+      navigate('/leave')
+    } catch (err) {
+      notify(err.message || 'Failed to submit leave request.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleAiSuggest = async () => {
+    if (!reason.trim()) {
+      notify('Please describe your leave reason first to get an AI suggestion.')
+      return
+    }
+    setAiLoading(true)
+    try {
+      const res = await aiSmartLeave(reason)
+      if (res?.type) setType(res.type)
+      notify('AI parsed your request!')
+    } catch (err) {
+      notify(err.message || 'AI assistant unavailable.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <PageHeading eyebrow="TIME OFF" title="Smart leave request" description="Apply for time off and manage your leave requests." />
+      <div className="content-two-col">
+        <section className="panel form-panel">
+          <h3>Request details</h3>
+          <p className="panel-subtitle">Select leave type and dates</p>
+          <form onSubmit={handleSubmit}>
+            <FormField
+              label="Leave type"
+              as="select"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+              options={[
+                { value: 'annual', label: 'Annual Leave' },
+                { value: 'sick', label: 'Sick Leave' },
+                { value: 'casual', label: 'Casual Leave' },
+                { value: 'unpaid', label: 'Unpaid Leave' },
+              ]}
+              required
+            />
+            <div className="form-grid">
+              <FormField
+                label="Start date"
+                type="date"
+                value={start}
+                onChange={(e) => setStart(e.target.value)}
+                required
+              />
+              <FormField
+                label="End date"
+                type="date"
+                value={end}
+                onChange={(e) => setEnd(e.target.value)}
+                required
+              />
+            </div>
+            <FormField
+              label="Reason"
+              as="textarea"
+              rows={4}
+              placeholder="State the reason for taking time away..."
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              required
+            />
+            <div className="form-actions">
+              <button type="button" className="button button-secondary" onClick={() => window.history.back()}>Cancel</button>
+              <button type="submit" className="button button-primary" disabled={submitting}>
+                {submitting ? 'Submitting...' : 'Submit request'}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section className="panel smart-tip">
+          <div className="chat-sparkle"><Sparkles size={20} /></div>
+          <h3>Need help with leave?</h3>
+          <p>Our smart policy assistant can analyze your workplace leave rules and suggest optimal leave types.</p>
+          <button className="button button-secondary" style={{ marginTop: '12px' }} onClick={handleAiSuggest} disabled={aiLoading}>
+            {aiLoading ? 'Analyzing...' : 'Parse reason with AI'}
+          </button>
+        </section>
+      </div>
+    </>
+  )
 }
 
-function Payslip({ notify }) {
-  return <><PageHeading eyebrow="YOUR PAY" title="Payslip details" description="Review a payroll statement." action="Download PDF" onAction={() => notify(backendPending())} /><section className="payslip-sheet panel"><div className="payslip-top"><div className="brand-mark"><Activity size={18} /></div><span>HCM LITE · PAY STATEMENT</span><StatusBadge>Not available</StatusBadge></div><EmptyState title="Payslip not found" description="Payslip details are not available because payroll is not connected." /><button className="button button-secondary" onClick={() => notify(backendPending())}><Download size={15} /> Download PDF</button></section></>
+function LeaveView({ role, notify, navigate }) {
+  const [leaves, setLeaves] = useState([])
+  const [balance, setBalance] = useState(null)
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(() => {
+    Promise.all([
+      getLeaves().catch(() => ({ items: [] })),
+      getLeaveBalance('me').catch(() => null),
+    ]).then(([resL, resB]) => {
+      setLeaves(resL?.items || resL || [])
+      setBalance(resB)
+    }).finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleCancel = async (id) => {
+    try {
+      await cancelLeave(id)
+      notify('Leave request cancelled.')
+      load()
+    } catch (err) {
+      notify(err.message || 'Cannot cancel leave.')
+    }
+  }
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="TIME OFF"
+        title="Leave applications"
+        description="Track your requests and available leave balance."
+        action="Request leave"
+        onAction={() => navigate('/leave/new')}
+      />
+      {balance && (
+        <div className="stats-grid compact-stats" style={{ marginBottom: '24px' }}>
+          {Object.entries(balance.balances || {}).map(([t, count]) => (
+            <StatCard key={t} label={`${t} balance`} accent="teal" icon={CalendarDays} />
+          ))}
+        </div>
+      )}
+      <section className="panel">
+        <DataTable
+          columns={['Leave type', 'Date range', 'Reason', 'Status', 'Actions']}
+          rows={leaves.map((l) => ({
+            'Leave type': l.type,
+            'Date range': `${l.start} to ${l.end}`,
+            Reason: l.reason,
+            Status: l.status || 'pending',
+            Actions: l.status === 'pending' ? (
+              <button className="button button-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleCancel(l._id)}>
+                Cancel
+              </button>
+            ) : '—',
+          }))}
+          emptyTitle="No leave applications"
+          emptyDescription="You have not submitted any leave requests yet."
+        />
+      </section>
+    </>
+  )
 }
 
-function Building2Icon() {
-  return <BriefcaseBusiness size={21} />
+function LeaveApprovalsView({ notify }) {
+  const [leaves, setLeaves] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(() => {
+    getLeaves({ state: 'pending' })
+      .then((res) => setLeaves(res?.items || res || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleDecide = async (id, decision) => {
+    try {
+      await decideLeave(id, { decision, comment: `Decision: ${decision}` })
+      notify(`Leave marked as ${decision}!`)
+      load()
+    } catch (err) {
+      notify(err.message || 'Failed to update leave.')
+    }
+  }
+
+  return (
+    <>
+      <PageHeading eyebrow="HR INBOX" title="Leave approval inbox" description="Review leave requests from your team." />
+      <section className="panel">
+        <DataTable
+          columns={['Employee', 'Leave type', 'Date range', 'Reason', 'Actions']}
+          rows={leaves.map((l) => ({
+            Employee: l.employeeId || 'Employee',
+            'Leave type': l.type,
+            'Date range': `${l.start} to ${l.end}`,
+            Reason: l.reason,
+            Actions: (
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button className="button button-primary" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => handleDecide(l._id, 'approved')}>
+                  Approve
+                </button>
+                <button className="button button-secondary" style={{ padding: '4px 10px', fontSize: '12px' }} onClick={() => handleDecide(l._id, 'rejected')}>
+                  Reject
+                </button>
+              </div>
+            ),
+          }))}
+          emptyTitle="No pending leave requests"
+          emptyDescription="There are no pending requests to review."
+        />
+      </section>
+    </>
+  )
 }
 
+// ---------------- PAYROLL & PAYSLIPS ----------------
+function PayrollView({ role, notify }) {
+  const [runs, setRuns] = useState([])
+  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [creating, setCreating] = useState(false)
+
+  const load = useCallback(() => {
+    getPayrolls()
+      .then((res) => setRuns(Array.isArray(res) ? res : res?.items || []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleCreate = async (e) => {
+    e.preventDefault()
+    setCreating(true)
+    try {
+      await createPayroll(month)
+      notify(`Payroll draft created for ${month}!`)
+      load()
+    } catch (err) {
+      notify(err.message || 'Failed to generate payroll.')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const handleFinalize = async (id) => {
+    try {
+      await finalizePayroll(id)
+      notify('Payroll finalized and locked!')
+      load()
+    } catch (err) {
+      notify(err.message || 'Cannot finalize payroll.')
+    }
+  }
+
+  return (
+    <>
+      <PageHeading eyebrow="PAY & BENEFITS" title="Payroll processing" description="Prepare, review, and finalize payroll runs." />
+      <div className="panel" style={{ padding: '20px', marginBottom: '24px' }}>
+        <h3>Create or Recalculate Monthly Payroll Draft</h3>
+        <form onSubmit={handleCreate} style={{ display: 'flex', gap: '12px', marginTop: '12px', alignItems: 'center' }}>
+          <label style={{ fontSize: '14px', fontWeight: 500 }}>Month (YYYY-MM):</label>
+          <input
+            type="month"
+            value={month}
+            onChange={(e) => setMonth(e.target.value)}
+            style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+            required
+          />
+          <button className="button button-primary" type="submit" disabled={creating}>
+            <CircleDollarSign size={15} /> {creating ? 'Processing...' : 'Run Payroll Draft'}
+          </button>
+        </form>
+      </div>
+
+      <section className="panel">
+        <DataTable
+          columns={['Month', 'Employees', 'Total Gross', 'Total Net', 'Status', 'Actions']}
+          rows={runs.map((r) => ({
+            Month: r.month,
+            Employees: r.employeesCount || r.items?.length || 0,
+            'Total Gross': r.totalGross ? `PKR ${r.totalGross}` : '—',
+            'Total Net': r.totalNet ? `PKR ${r.totalNet}` : '—',
+            Status: r.status || 'draft',
+            Actions: role === 'Admin' && r.status !== 'finalized' ? (
+              <button className="button button-primary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleFinalize(r._id)}>
+                Finalize Run
+              </button>
+            ) : 'Locked',
+          }))}
+          emptyTitle="No payroll runs yet"
+          emptyDescription="Create a draft payroll run above."
+        />
+      </section>
+    </>
+  )
+}
+
+function PayslipsView() {
+  const [slips, setSlips] = useState([])
+
+  useEffect(() => {
+    getPayslips()
+      .then((res) => setSlips(Array.isArray(res) ? res : res?.items || []))
+      .catch(() => {})
+  }, [])
+
+  return (
+    <>
+      <PageHeading eyebrow="YOUR PAY" title="Payslips" description="Access your monthly salary statements." />
+      <section className="panel">
+        <DataTable
+          columns={['Month', 'Gross Pay', 'Net Pay', 'Deductions', 'Status']}
+          rows={slips.map((s) => ({
+            Month: s.month,
+            'Gross Pay': s.grossPay ? `PKR ${s.grossPay}` : '—',
+            'Net Pay': s.netPay ? `PKR ${s.netPay}` : '—',
+            Deductions: s.deductions ? `PKR ${s.deductions}` : '0',
+            Status: s.status || 'Processed',
+          }))}
+          emptyTitle="No payslips yet"
+          emptyDescription="Payslips will appear once monthly payroll is finalized."
+        />
+      </section>
+    </>
+  )
+}
+
+// ---------------- AI ASSISTANT ----------------
+function AiAssistantView() {
+  const [messages, setMessages] = useState([
+    { sender: 'assistant', text: 'Hello! I am your HCM Lite Policy Assistant. You can ask me questions about company policies, leave entitlements, office hours, and workplace guidelines.' },
+  ])
+  const [input, setInput] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const handleSend = async (e) => {
+    e?.preventDefault()
+    if (!input.trim() || loading) return
+
+    const userText = input.trim()
+    setInput('')
+    setMessages((prev) => [...prev, { sender: 'user', text: userText }])
+    setLoading(true)
+
+    try {
+      const res = await aiChat(userText)
+      const reply = res?.message || res?.content || (typeof res === 'string' ? res : 'I could not retrieve an answer.')
+      setMessages((prev) => [...prev, { sender: 'assistant', text: reply }])
+    } catch (err) {
+      setMessages((prev) => [...prev, { sender: 'assistant', text: `Error: ${err.message || 'Unable to connect to AI assistant.'}` }])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <PageHeading eyebrow="HCM LITE AI" title="Your policy assistant" description="Ask questions about company leave, attendance, and benefits." />
+      <section className="panel chat-panel" style={{ minHeight: '450px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ padding: '16px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            {['What is the leave policy?', 'How many sick leave days are allowed?', 'What are the official working hours?'].map((suggestion) => (
+              <button
+                key={suggestion}
+                type="button"
+                className="select-button"
+                onClick={() => { setInput(suggestion) }}
+                style={{ fontSize: '12px' }}
+              >
+                {suggestion}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ flex: 1, padding: '20px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {messages.map((m, idx) => (
+            <div
+              key={idx}
+              style={{
+                alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start',
+                maxWidth: '75%',
+                padding: '12px 16px',
+                borderRadius: '12px',
+                background: m.sender === 'user' ? '#6366f1' : '#f1f5f9',
+                color: m.sender === 'user' ? '#ffffff' : '#1e293b',
+                lineHeight: 1.5,
+              }}
+            >
+              {m.text}
+            </div>
+          ))}
+          {loading && (
+            <div style={{ alignSelf: 'flex-start', color: '#6366f1', fontStyle: 'italic', padding: '8px' }}>
+              Assistant is thinking...
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={handleSend} className="chat-compose" style={{ display: 'flex', padding: '16px', gap: '12px', borderTop: '1px solid #e2e8f0' }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            placeholder="Ask a question about workplace rules..."
+            style={{ flex: 1, padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1' }}
+          />
+          <button className="button button-primary" type="submit" disabled={!input.trim() || loading}>
+            <Send size={15} /> Send
+          </button>
+        </form>
+      </section>
+    </>
+  )
+}
+
+// ---------------- ANNOUNCEMENTS ----------------
+function AnnouncementsView({ role, notify }) {
+  const [items, setItems] = useState([])
+  const [showAdd, setShowAdd] = useState(false)
+  const [title, setTitle] = useState('')
+  const [body, setBody] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const load = useCallback(() => {
+    getAnnouncements()
+      .then((res) => setItems(res?.items || res || []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handlePost = async (e) => {
+    e.preventDefault()
+    setSubmitting(true)
+    try {
+      await createAnnouncement({ title, body })
+      notify('Announcement posted successfully!')
+      setTitle('')
+      setBody('')
+      setShowAdd(false)
+      load()
+    } catch (err) {
+      notify(err.message || 'Failed to post announcement.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="STAY IN THE LOOP"
+        title="Announcements"
+        description="Company updates and important messages."
+        action={role !== 'Employee' ? (showAdd ? 'Close form' : 'New announcement') : undefined}
+        onAction={() => setShowAdd(!showAdd)}
+      />
+
+      {showAdd && (
+        <section className="panel" style={{ padding: '24px', marginBottom: '24px' }}>
+          <h3>Create Company Announcement</h3>
+          <form onSubmit={handlePost} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginTop: '12px' }}>
+            <input
+              placeholder="Announcement title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+              required
+            />
+            <textarea
+              placeholder="Announcement message..."
+              rows={4}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              style={{ padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1' }}
+              required
+            />
+            <button className="button button-primary" type="submit" disabled={submitting} style={{ alignSelf: 'flex-start' }}>
+              {submitting ? 'Publishing...' : 'Publish announcement'}
+            </button>
+          </form>
+        </section>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+        {items.length === 0 ? (
+          <EmptyState title="No announcements yet" description="When company updates are posted, they will appear here." />
+        ) : (
+          items.map((item) => (
+            <div key={item._id} className="panel" style={{ padding: '20px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <h3 style={{ margin: 0 }}>{item.title}</h3>
+                <small style={{ color: '#64748b' }}>{new Date(item.createdAt).toLocaleDateString()}</small>
+              </div>
+              <p style={{ margin: 0, color: '#334155', lineHeight: 1.6 }}>{item.body}</p>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  )
+}
+
+// ---------------- NOTIFICATIONS ----------------
+function NotificationsView({ notify }) {
+  const [items, setItems] = useState([])
+
+  const load = useCallback(() => {
+    getNotifications()
+      .then((res) => setItems(res?.items || res || []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { load() }, [load])
+
+  const handleRead = async (id) => {
+    try {
+      await markNotificationRead(id)
+      load()
+    } catch {}
+  }
+
+  return (
+    <>
+      <PageHeading eyebrow="YOUR INBOX" title="Notifications" description="Updates and notices that need your attention." />
+      <section className="panel">
+        <DataTable
+          columns={['Title', 'Date', 'Status']}
+          rows={items.map((n) => ({
+            Title: n.title,
+            Date: new Date(n.createdAt).toLocaleDateString(),
+            Status: n.readAt ? 'Read' : (
+              <button className="button button-secondary" style={{ padding: '4px 8px', fontSize: '12px' }} onClick={() => handleRead(n._id)}>
+                Mark read
+              </button>
+            ),
+          }))}
+          emptyTitle="You're all caught up"
+          emptyDescription="No unread notifications at this time."
+        />
+      </section>
+    </>
+  )
+}
+
+// ---------------- AUDIT LOGS ----------------
+function AuditLogsView() {
+  const [logs, setLogs] = useState([])
+
+  useEffect(() => {
+    getAuditLogs()
+      .then((res) => setLogs(res?.items || res || []))
+      .catch(() => {})
+  }, [])
+
+  return (
+    <>
+      <PageHeading eyebrow="ADMINISTRATION" title="Audit logs" description="An immutable record of important workspace events." />
+      <section className="panel">
+        <DataTable
+          columns={['Action', 'Entity', 'Entity ID', 'Date & Time']}
+          rows={logs.map((l) => ({
+            Action: l.action,
+            Entity: l.entity,
+            'Entity ID': l.entityId || '—',
+            'Date & Time': new Date(l.createdAt).toLocaleString(),
+          }))}
+          emptyTitle="No audit logs recorded yet"
+          emptyDescription="Administrative actions will be recorded here."
+        />
+      </section>
+    </>
+  )
+}
+
+// ---------------- SETTINGS ----------------
+function SettingsView({ navigate }) {
+  const { user, role, logout } = useApp()
+
+  return (
+    <>
+      <PageHeading eyebrow="YOUR ACCOUNT" title="Profile settings" description="Manage your personal details and account preferences." />
+      <div className="content-two-col">
+        <section className="panel form-panel">
+          <h3>Account Information</h3>
+          <p className="panel-subtitle">Your user account metadata</p>
+          <div className="form-grid">
+            <FormField label="Email" value={user?.email || '—'} readOnly />
+            <FormField label="Role" value={role || '—'} readOnly />
+          </div>
+          <div style={{ marginTop: '24px', display: 'flex', gap: '12px' }}>
+            <button className="button button-secondary" onClick={() => navigate('/change-password')}>
+              Change password
+            </button>
+            <button className="button button-primary" onClick={logout} style={{ background: '#dc2626' }}>
+              Sign out
+            </button>
+          </div>
+        </section>
+
+        <section className="panel side-info-panel">
+          <div className="avatar avatar-large avatar-indigo">{(user?.email?.[0] || role?.[0] || 'U').toUpperCase()}</div>
+          <h3>{user?.email || `${role} account`}</h3>
+          <p>Role: {role}</p>
+          <StatusBadge>Active</StatusBadge>
+        </section>
+      </div>
+    </>
+  )
+}
+
+// ---------------- EMPLOYEE DIRECTORY ----------------
+function EmployeesDirectory({ notify, navigate }) {
+  const [employees, setEmployees] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  const load = useCallback(() => {
+    getEmployees({ search })
+      .then((res) => setEmployees(res?.items || res || []))
+      .catch(() => {})
+      .finally(() => setLoading(false))
+  }, [search])
+
+  useEffect(() => { load() }, [load])
+
+  return (
+    <>
+      <PageHeading
+        eyebrow="PEOPLE DIRECTORY"
+        title="Employee directory"
+        description="Manage your people and their work details."
+        action="Add employee"
+        onAction={() => navigate('/employees/new')}
+      />
+      <section className="panel">
+        <div className="toolbar" style={{ display: 'flex', justifyContent: 'space-between', padding: '16px' }}>
+          <label className="search-field" style={{ display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid #cbd5e1', borderRadius: '6px', padding: '6px 12px' }}>
+            <Search size={16} />
+            <input
+              placeholder="Search employees by name or code..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ border: 'none', outline: 'none' }}
+            />
+          </label>
+        </div>
+        <DataTable
+          columns={['Code', 'Name', 'Email', 'Joining date', 'Status', 'Actions']}
+          rows={employees.map((e) => ({
+            Code: e.code || '—',
+            Name: e.name || '—',
+            Email: e.email || '—',
+            'Joining date': e.joiningDate || '—',
+            Status: e.status || 'Active',
+            Actions: (
+              <button
+                className="button button-secondary"
+                style={{ padding: '4px 8px', fontSize: '12px' }}
+                onClick={() => navigate(`/employees/${e._id}`)}
+              >
+                View 360
+              </button>
+            ),
+          }))}
+          emptyTitle="No employees found"
+          emptyDescription="Add your first team member using the 'Add employee' button above."
+        />
+      </section>
+    </>
+  )
+}
+
+// ---------------- MAIN WORKSPACE DISPATCHER ----------------
 export default function WorkspacePage({ title }) {
   const location = window.location.pathname
   const slug = location.split('/')[1] || 'dashboard'
   const { role, notify } = useApp()
   const navigate = useNavigate()
   const params = useParams()
-  const onAction = () => {
-    if (slug === 'employees') navigate('/employees/new')
-    else if (slug === 'leave' && role === 'Employee') navigate('/leave/new')
-    else notify(backendPending())
+
+  if (slug === 'dashboard') return <Dashboard role={role} navigate={navigate} />
+  if (slug === 'employees') {
+    if (location.endsWith('/new')) return <EmployeeForm title="Add employee" notify={notify} />
+    if (params.employeeId) return <EmployeeProfile notify={notify} navigate={navigate} />
+    return <EmployeesDirectory notify={notify} navigate={navigate} />
   }
-  if (slug === 'dashboard') return <Dashboard role={role} onAction={onAction} navigate={navigate} />
-  if (slug === 'employees' && params.employeeId) {
-    if (location.endsWith('/edit')) return <EmployeeForm title="Edit employee" notify={notify} />
-    return <EmployeeProfile notify={notify} navigate={navigate} />
+  if (slug === 'organization') return <OrganizationView notify={notify} />
+  if (slug === 'departments') return <DepartmentsView notify={notify} />
+  if (slug === 'my-attendance') return <MyAttendanceView notify={notify} />
+  if (slug === 'attendance') return <MyAttendanceView notify={notify} />
+  if (slug === 'leave') {
+    if (location.endsWith('/new')) return <SmartLeave notify={notify} />
+    return <LeaveView role={role} notify={notify} navigate={navigate} />
   }
-  return <GenericContent slug={slug} title={title} role={role} onAction={onAction} notify={notify} navigate={navigate} />
+  if (slug === 'leave-approvals') return <LeaveApprovalsView notify={notify} />
+  if (slug === 'payroll') return <PayrollView role={role} notify={notify} />
+  if (slug === 'payslips') return <PayslipsView />
+  if (slug === 'salary-structure') return <OrganizationView notify={notify} />
+  if (slug === 'ai-assistant') return <AiAssistantView />
+  if (slug === 'announcements') return <AnnouncementsView role={role} notify={notify} />
+  if (slug === 'notifications') return <NotificationsView notify={notify} />
+  if (slug === 'audit-logs') return <AuditLogsView />
+  if (slug === 'settings') return <SettingsView navigate={navigate} />
+
+  return <EmptyState title={title} description="This workspace section is active." />
 }

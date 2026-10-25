@@ -21,9 +21,11 @@ const menuByRole = {
 }
 
 export default function Sidebar({ open, onClose }) {
-  const { role } = useApp()
+  const { role, user, logout } = useApp()
   const location = useLocation()
   const sections = menuByRole[role] || []
+  const initial = (user?.email?.[0] || role?.[0] || 'U').toUpperCase()
+
   return (
     <>
       {open && <button className="sidebar-scrim" aria-label="Close navigation" onClick={onClose} />}
@@ -33,7 +35,11 @@ export default function Sidebar({ open, onClose }) {
           <div><strong>hcm<span>lite</span></strong><small>PEOPLE, SIMPLIFIED</small></div>
           <button className="icon-button mobile-close" onClick={onClose} aria-label="Close navigation"><X size={18} /></button>
         </div>
-        <button className="workspace-switcher"><span className="workspace-avatar">H</span><span><strong>Workspace preview</strong><small>{role} view</small></span><ChevronDown size={15} /></button>
+        <button className="workspace-switcher">
+          <span className="workspace-avatar">H</span>
+          <span><strong>HCM Lite</strong><small>{role} workspace</small></span>
+          <ChevronDown size={15} />
+        </button>
         <nav className="side-nav" aria-label="Main navigation">
           {sections.map(([section, links]) => (
             <div className="nav-section" key={section}>
@@ -48,8 +54,10 @@ export default function Sidebar({ open, onClose }) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <div className="help-card"><span className="help-icon"><FileClock size={17} /></span><strong>Just getting started?</strong><p>Your workspace is ready to connect.</p><span className="help-progress"><i /></span><small>Setup guide · 0 of 4</small></div>
-          <div className="sidebar-user"><div className="avatar avatar-indigo">{role === 'Employee' ? 'E' : role === 'HR' ? 'H' : 'A'}</div><span><strong>{role} preview</strong><small>Demo navigation only</small></span><ChevronDown size={15} /></div>
+          <div className="sidebar-user" onClick={logout} title="Click to log out" style={{ cursor: 'pointer' }}>
+            <div className="avatar avatar-indigo">{initial}</div>
+            <span><strong>{user?.email || `${role} user`}</strong><small>Click to sign out</small></span>
+          </div>
         </div>
       </aside>
     </>
