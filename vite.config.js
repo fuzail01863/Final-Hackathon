@@ -8,8 +8,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        target: 'https://backend-hackathon-01.onrender.com',
         changeOrigin: true,
+        secure: false,
       },
     },
   },
